@@ -1,0 +1,29 @@
+services:
+  # PostgreSQL Datenbank
+  db:
+    image: postgres:16-alpine
+    restart: always
+    environment:
+      POSTGRES_USER: abiorga
+      POSTGRES_PASSWORD: ${DB_PASSWORD}
+      POSTGRES_DB: abiorga
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    ports:
+      - "127.0.0.1:5432:5432" # Nur lokal erreichbar, nicht von außen
+
+  # Next.js App
+  app:
+    build: .
+    restart: always
+    depends_on:
+      - db
+    environment:
+      DATABASE_URL: postgresql://abiorga:${DB_PASSWORD}@db:5432/abiorga
+      NEXTAUTH_URL: https://abi.redstonewolf.de
+      NEXTAUTH_SECRET: ${NEXTAUTH_SECRET}
+    ports:
+      - "127.0.0.1:3000:3000" # Nur lokal, Nginx leitet von außen weiter
+
+volumes:
+  postgres_data: # Datenbank-Daten bleiben erhalten, auch wenn Container neu gestartet wird
