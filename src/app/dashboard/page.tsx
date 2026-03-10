@@ -3,6 +3,7 @@
 import { useSession, signOut } from "next-auth/react";
 import { useRouter } from "next/navigation";
 import { useEffect } from "react";
+import Link from "next/link";
 
 export default function DashboardPage() {
   const { data: session, status } = useSession();
@@ -56,13 +57,13 @@ export default function DashboardPage() {
           </p>
         </div>
 
-        {/* Platzhalter-Karten für die Module */}
+        {/* Modul-Karten */}
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
           <ModuleCard
             title="Aufgaben"
             description="Aufgaben verwalten und Mülldienst-Rotation"
             icon="📋"
-            comingSoon={true}
+            href="/dashboard/tasks"
           />
           <ModuleCard
             title="Finanzen"
@@ -99,14 +100,16 @@ function ModuleCard({
   description,
   icon,
   comingSoon,
+  href,
 }: {
   title: string;
   description: string;
   icon: string;
   comingSoon?: boolean;
+  href?: string;
 }) {
-  return (
-    <div className="bg-white rounded-xl shadow-sm border p-6 hover:shadow-md transition relative">
+  const cardContent = (
+    <>
       {comingSoon && (
         <span className="absolute top-3 right-3 text-xs bg-amber-100 text-amber-700 px-2 py-0.5 rounded-full font-medium">
           Bald verfügbar
@@ -115,6 +118,23 @@ function ModuleCard({
       <div className="text-3xl mb-3">{icon}</div>
       <h3 className="font-semibold text-gray-900">{title}</h3>
       <p className="text-sm text-gray-500 mt-1">{description}</p>
+    </>
+  );
+
+  if (href) {
+    return (
+      <Link
+        href={href}
+        className="bg-white rounded-xl shadow-sm border p-6 hover:shadow-md hover:border-blue-300 transition relative block"
+      >
+        {cardContent}
+      </Link>
+    );
+  }
+
+  return (
+    <div className="bg-white rounded-xl shadow-sm border p-6 hover:shadow-md transition relative opacity-75">
+      {cardContent}
     </div>
   );
 }

@@ -16,39 +16,151 @@ datasource db {
 
 enum Role {
   ADMIN
+  COMMITTEE
   TEAM_LEADER
   MEMBER
+}
+
+enum TaskType {
+  ONE_TIME
+  RECURRING
+}
+
+enum TaskStatus {
+  OPEN
+  ASSIGNED
+  IN_PROGRESS
+  COMPLETED
+  VERIFIED
+}
+
+enum AssignmentMode {
+  AUTO
+  MANUAL
+}
+
+enum RecurrenceInterval {
+  DAILY
+  WEEKLY
+  BIWEEKLY
+  MONTHLY
 }
 
 model User {
   id             String   @id @default(cuid())
   email          String   @unique
   name           String
-  password       String   // Gehashtes Passwort
+  password       String
   role           Role     @default(MEMBER)
-  avatar         String?  // Profilbild-URL (optional)
+  avatar         String?
   createdAt      DateTime @default(now())
   updatedAt      DateTime @updatedAt
 
   // Beziehungen
-  teamMemberships TeamMember[]
-  assignedTasks   Task[]             @relation("AssignedTo")
-  createdTasks    Task[]             @relation("CreatedBy")
-  taskRatings     TaskRating[]
-  transactions    Transaction[]      @relation("CreatedBy")
-  reviewedTx      Transaction[]      @relation("ReviewedBy")
-  notifications   Notification[]     @relation("CreatedBy")
+  teamMemberships   TeamMember[]
+  createdTasks      Task[]             @relation("TaskCreator")
+  assignments       TaskAssignment[]   @relation("TaskAssignments")
+  taskRatings       TaskRating[]       @relation("TaskRatings")
+  transactions      Transaction[]      @relation("CreatedBy")
+  reviewedTx        Transaction[]      @relation("ReviewedBy")
+  notifications     Notification[]     @relation("CreatedBy")
   pushSubscriptions PushSubscription[]
-  stories         Story[]
+  stories           Story[]
 
   @@map("users")
+}
+
+// ============================================================
+// AUFGABEN & BEWERTUNG
+// ============================================================
+
+model Task {
+  id          String   @id @default(cuid())
+  title       String
+  description String?
+  type        TaskType
+  status      TaskStatus @default(OPEN)
+
+  // Zuweisung
+  assignmentMode AssignmentMode @default(MANUAL)
+  isTeamTask     Boolean        @default(false)
+  maxAssignees   Int            @default(1)
+
+  // Wiederkehrende Aufgaben
+  recurrenceInterval RecurrenceInterval?
+  nextDueDate        DateTime?
+
+  // Einmalige Aufgaben
+  dueDate    DateTime?
+
+  // Priorität (1 = niedrig, 5 = hoch)
+  priority   Int @default(3)
+
+  // Beziehungen
+  createdById String
+  createdBy   User @relation("TaskCreator", fields: [createdById], references: [id])
+
+  teamId String?
+  team   Team?  @relation(fields: [teamId], references: [id])
+
+  assignments TaskAssignment[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([status])
+  @@index([type])
+  @@index([nextDueDate])
+}
+
+model TaskAssignment {
+  id     String @id @default(cuid())
+
+  taskId String
+  task   Task   @relation(fields: [taskId], references: [id], onDelete: Cascade)
+
+  userId String
+  user   User   @relation("TaskAssignments", fields: [userId], references: [id])
+
+  assignedAt  DateTime   @default(now())
+  dueDate     DateTime?
+  completedAt DateTime?
+
+  status TaskStatus @default(ASSIGNED)
+
+  ratings TaskRating[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([taskId, userId, assignedAt])
+  @@index([userId])
+  @@index([taskId])
+}
+
+model TaskRating {
+  id String @id @default(cuid())
+
+  assignmentId String
+  assignment   TaskAssignment @relation(fields: [assignmentId], references: [id], onDelete: Cascade)
+
+  raterId String
+  rater   User   @relation("TaskRatings", fields: [raterId], references: [id])
+
+  score   Int
+  comment String?
+
+  createdAt DateTime @default(now())
+
+  @@unique([assignmentId, raterId])
+  @@index([assignmentId])
 }
 
 model PushSubscription {
   id        String   @id @default(cuid())
   userId    String
   endpoint  String   @unique
-  p256dh    String   // Verschlüsselungs-Keys für Web Push
+  p256dh    String
   auth      String
   createdAt DateTime @default(now())
 
@@ -65,11 +177,10 @@ model Team {
   id          String   @id @default(cuid())
   name        String   @unique
   description String?
-  color       String   @default("#4472C4") // Farbe für UI
+  color       String   @default("#4472C4")
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 
-  // Beziehungen
   members       TeamMember[]
   tasks         Task[]
   notifications Notification[]
@@ -83,81 +194,13 @@ model TeamMember {
   id       String  @id @default(cuid())
   userId   String
   teamId   String
-  isLeader Boolean @default(false) // Teamleiter?
+  isLeader Boolean @default(false)
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
   team Team @relation(fields: [teamId], references: [id], onDelete: Cascade)
 
-  @@unique([userId, teamId]) // Jeder User nur einmal pro Team
+  @@unique([userId, teamId])
   @@map("team_members")
-}
-
-// ============================================================
-// AUFGABEN & BEWERTUNG
-// ============================================================
-
-enum TaskStatus {
-  OPEN
-  IN_PROGRESS
-  DONE
-  RATED
-}
-
-model Task {
-  id          String     @id @default(cuid())
-  title       String
-  description String?
-  status      TaskStatus @default(OPEN)
-  deadline    DateTime?
-  isRecurring Boolean    @default(false) // Wiederkehrende Aufgabe?
-  recurringDays Int?     // Alle X Tage rotieren
-  createdAt   DateTime   @default(now())
-  updatedAt   DateTime   @updatedAt
-
-  // Zuweisung
-  assignedToId String?
-  createdById  String
-  teamId       String?
-
-  assignedTo User?  @relation("AssignedTo", fields: [assignedToId], references: [id])
-  createdBy  User   @relation("CreatedBy", fields: [createdById], references: [id])
-  team       Team?  @relation(fields: [teamId], references: [id])
-
-  // Bewertungen
-  ratings TaskRating[]
-
-  // Rotations-Historie
-  rotationHistory TaskRotation[]
-
-  @@map("tasks")
-}
-
-model TaskRating {
-  id        String   @id @default(cuid())
-  taskId    String
-  userId    String
-  stars     Int      // 1-5 Sterne
-  thumbsUp  Boolean  // Daumen hoch oder runter
-  comment   String?  // Optionaler Kommentar
-  createdAt DateTime @default(now())
-
-  task Task @relation(fields: [taskId], references: [id], onDelete: Cascade)
-  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
-
-  @@unique([taskId, userId]) // Jeder User kann nur einmal pro Aufgabe bewerten
-  @@map("task_ratings")
-}
-
-model TaskRotation {
-  id         String   @id @default(cuid())
-  taskId     String
-  userId     String   // Wer war dran?
-  startDate  DateTime
-  endDate    DateTime?
-
-  task Task @relation(fields: [taskId], references: [id], onDelete: Cascade)
-
-  @@map("task_rotations")
 }
 
 // ============================================================
@@ -165,32 +208,30 @@ model TaskRotation {
 // ============================================================
 
 enum TransactionType {
-  INCOME      // Einzahlung
-  EXPENSE     // Auszahlung
+  INCOME
+  EXPENSE
 }
 
 enum TransactionStatus {
-  PENDING     // Vormerkung (nur Admins sichtbar)
-  APPROVED    // Bestätigt (öffentlich)
-  REJECTED    // Abgelehnt
+  PENDING
+  APPROVED
+  REJECTED
 }
 
 model Transaction {
   id           String            @id @default(cuid())
-  amount       Float             // Betrag in Euro
+  amount       Float
   type         TransactionType
   status       TransactionStatus @default(PENDING)
-  reason       String            // Grund der Transaktion
-  category     String?           // z.B. "Deko", "Catering", "Sonstiges"
-  rejectReason String?           // Grund bei Ablehnung
+  reason       String
+  category     String?
+  rejectReason String?
   createdAt    DateTime          @default(now())
   updatedAt    DateTime          @updatedAt
 
-  // Wer hat es eingetragen?
   createdById  String
   createdBy    User @relation("CreatedBy", fields: [createdById], references: [id])
 
-  // Wer hat es bestätigt/abgelehnt?
   reviewedById String?
   reviewedBy   User?  @relation("ReviewedBy", fields: [reviewedById], references: [id])
   reviewedAt   DateTime?
@@ -203,8 +244,8 @@ model Transaction {
 // ============================================================
 
 enum NotificationScope {
-  GLOBAL    // Für die gesamte Stufe
-  TEAM      // Nur für ein bestimmtes Team
+  GLOBAL
+  TEAM
 }
 
 model Notification {
@@ -212,14 +253,12 @@ model Notification {
   title     String
   message   String
   scope     NotificationScope @default(GLOBAL)
-  pinned    Boolean           @default(false) // Oben angeheftet?
+  pinned    Boolean           @default(false)
   createdAt DateTime          @default(now())
 
-  // Wer hat sie erstellt?
   createdById String
   createdBy   User @relation("CreatedBy", fields: [createdById], references: [id])
 
-  // Optional: für welches Team?
   teamId String?
   team   Team?  @relation(fields: [teamId], references: [id])
 
@@ -227,25 +266,22 @@ model Notification {
 }
 
 // ============================================================
-// STORIES (Phase 4, aber Schema schon vorbereitet)
+// STORIES
 // ============================================================
 
 model Story {
   id        String   @id @default(cuid())
-  mediaUrl  String?  // Bild oder Video URL
-  text      String?  // Text-Inhalt
-  expiresAt DateTime // Ablaufzeit (48 Stunden nach Erstellung)
+  mediaUrl  String?
+  text      String?
+  expiresAt DateTime
   createdAt DateTime @default(now())
 
-  // Erstellt von User (muss Admin oder Teamleiter sein)
   createdById String
   createdBy   User @relation(fields: [createdById], references: [id])
 
-  // Optional: im Namen eines Teams
   teamId String?
   team   Team?  @relation(fields: [teamId], references: [id])
 
-  // Reaktionen
   reactions StoryReaction[]
 
   @@map("stories")
@@ -255,16 +291,16 @@ model StoryReaction {
   id      String @id @default(cuid())
   storyId String
   userId  String
-  emoji   String // z.B. "🎉", "❤️", "👍"
+  emoji   String
 
   story Story @relation(fields: [storyId], references: [id], onDelete: Cascade)
 
-  @@unique([storyId, userId]) // Ein Emoji pro User pro Story
+  @@unique([storyId, userId])
   @@map("story_reactions")
 }
 
 // ============================================================
-// TEAM-CHAT (Phase 4, aber Schema schon vorbereitet)
+// TEAM-CHAT
 // ============================================================
 
 model ChatMessage {
