@@ -2,12 +2,13 @@ import { NextRequest, NextResponse } from "next/server";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
+import type { TaskStatus } from "@prisma/client";
 
 interface RouteParams {
   params: Promise<{ id: string }>;
 }
 
-// POST /api/tasks/[id]/rate - Bewertung abgeben
+// POST /api/tasks/[id]/assign - User(s) zuweisen
 export async function POST(req: NextRequest, { params }: RouteParams) {
   try {
     const session = await getServerSession(authOptions);
@@ -16,77 +17,76 @@ export async function POST(req: NextRequest, { params }: RouteParams) {
     }
 
     const { id: taskId } = await params;
-    const body = await req.json();
-    const { assignmentId, score, comment } = body;
 
-    // Validierung
-    if (!assignmentId || !score || score < 1 || score > 5) {
+    const currentUser = await prisma.user.findUnique({
+      where: { id: session.user.id },
+      select: { role: true },
+    });
+
+    if (
+      !currentUser ||
+      (currentUser.role !== "ADMIN" && currentUser.role !== "COMMITTEE")
+    ) {
       return NextResponse.json(
-        { error: "Bewertung muss zwischen 1 und 5 sein" },
+        { error: "Keine Berechtigung" },
+        { status: 403 }
+      );
+    }
+
+    const body = await req.json();
+    const { userIds } = body as { userIds: string[] };
+
+    if (!userIds || !Array.isArray(userIds) || userIds.length === 0) {
+      return NextResponse.json(
+        { error: "Mindestens ein User muss ausgewählt werden" },
         { status: 400 }
       );
     }
 
-    // Prüfen ob die Zuweisung existiert und zur Aufgabe gehört
-    const assignment = await prisma.taskAssignment.findFirst({
-      where: {
-        id: assignmentId,
-        taskId,
-        status: { in: ["COMPLETED", "VERIFIED"] },
+    const task = await prisma.task.findUnique({
+      where: { id: taskId },
+      include: {
+        assignments: { select: { userId: true } },
       },
     });
 
-    if (!assignment) {
+    if (!task) {
       return NextResponse.json(
-        {
-          error:
-            "Zuweisung nicht gefunden oder Aufgabe noch nicht abgeschlossen",
-        },
+        { error: "Aufgabe nicht gefunden" },
         { status: 404 }
       );
     }
 
-    // Sich selbst bewerten ist nicht erlaubt
-    if (assignment.userId === session.user.id) {
+    const existingUserIds = task.assignments.map((a) => a.userId);
+    const newUserIds = userIds.filter(
+      (uid: string) => !existingUserIds.includes(uid)
+    );
+
+    if (newUserIds.length === 0) {
       return NextResponse.json(
-        { error: "Du kannst dich nicht selbst bewerten" },
+        { error: "Alle User sind bereits zugewiesen" },
         { status: 400 }
       );
     }
 
-    // Prüfen ob bereits bewertet
-    const existingRating = await prisma.taskRating.findUnique({
-      where: {
-        assignmentId_raterId: {
-          assignmentId,
-          raterId: session.user.id,
-        },
-      },
+    await prisma.taskAssignment.createMany({
+      data: newUserIds.map((userId: string) => ({
+        taskId,
+        userId,
+        status: "ASSIGNED" as const,
+      })),
     });
 
-    if (existingRating) {
-      return NextResponse.json(
-        { error: "Du hast diese Aufgabe bereits bewertet" },
-        { status: 400 }
-      );
+    if (task.status === "OPEN") {
+      await prisma.task.update({
+        where: { id: taskId },
+        data: { status: "ASSIGNED" },
+      });
     }
 
-    // Bewertung erstellen
-    const rating = await prisma.taskRating.create({
-      data: {
-        assignmentId,
-        raterId: session.user.id,
-        score,
-        comment: comment || null,
-      },
-      include: {
-        rater: { select: { id: true, name: true } },
-      },
-    });
-
-    return NextResponse.json(rating, { status: 201 });
+    return NextResponse.json({ message: `${newUserIds.length} User zugewiesen` });
   } catch (error) {
-    console.error("Fehler bei der Bewertung:", error);
+    console.error("Fehler bei der Zuweisung:", error);
     return NextResponse.json(
       { error: "Interner Serverfehler" },
       { status: 500 }
@@ -94,8 +94,8 @@ export async function POST(req: NextRequest, { params }: RouteParams) {
   }
 }
 
-// GET /api/tasks/[id]/rate - Bewertungen für eine Aufgabe abrufen
-export async function GET(req: NextRequest, { params }: RouteParams) {
+// PATCH /api/tasks/[id]/assign - Status ändern
+export async function PATCH(req: NextRequest, { params }: RouteParams) {
   try {
     const session = await getServerSession(authOptions);
     if (!session?.user) {
@@ -103,40 +103,67 @@ export async function GET(req: NextRequest, { params }: RouteParams) {
     }
 
     const { id: taskId } = await params;
+    const body = await req.json();
+    const { status } = body as { status: TaskStatus };
 
-    const assignments = await prisma.taskAssignment.findMany({
-      where: { taskId },
-      include: {
-        user: { select: { id: true, name: true } },
-        ratings: {
-          include: {
-            rater: { select: { id: true, name: true } },
-          },
-        },
+    const assignment = await prisma.taskAssignment.findFirst({
+      where: {
+        taskId,
+        userId: session.user.id,
       },
+      orderBy: { assignedAt: "desc" },
     });
 
-    // Pro Zuweisung den Durchschnitt berechnen
-    const results = assignments.map((assignment) => {
-      const scores = assignment.ratings.map((r) => r.score);
-      const avgScore =
-        scores.length > 0
-          ? scores.reduce((sum, s) => sum + s, 0) / scores.length
-          : null;
+    if (!assignment) {
+      return NextResponse.json(
+        { error: "Du bist dieser Aufgabe nicht zugewiesen" },
+        { status: 403 }
+      );
+    }
 
-      return {
-        assignmentId: assignment.id,
-        user: assignment.user,
-        status: assignment.status,
-        avgScore,
-        ratingCount: scores.length,
-        ratings: assignment.ratings,
-      };
+    const validTransitions: Record<string, TaskStatus[]> = {
+      ASSIGNED: ["IN_PROGRESS"],
+      IN_PROGRESS: ["COMPLETED"],
+    };
+
+    const allowed = validTransitions[assignment.status];
+    if (!allowed || !allowed.includes(status)) {
+      return NextResponse.json(
+        {
+          error: `Ungültiger Status-Wechsel: ${assignment.status} → ${status}`,
+        },
+        { status: 400 }
+      );
+    }
+
+    const updateData: { status: TaskStatus; completedAt?: Date } = { status };
+    if (status === "COMPLETED") {
+      updateData.completedAt = new Date();
+    }
+
+    await prisma.taskAssignment.update({
+      where: { id: assignment.id },
+      data: updateData,
     });
 
-    return NextResponse.json(results);
+    if (status === "COMPLETED") {
+      const allAssignments = await prisma.taskAssignment.findMany({
+        where: { taskId },
+      });
+      const allCompleted = allAssignments.every(
+        (a) => a.status === "COMPLETED" || a.status === "VERIFIED"
+      );
+      if (allCompleted) {
+        await prisma.task.update({
+          where: { id: taskId },
+          data: { status: "COMPLETED" },
+        });
+      }
+    }
+
+    return NextResponse.json({ message: "Status aktualisiert" });
   } catch (error) {
-    console.error("Fehler beim Laden der Bewertungen:", error);
+    console.error("Fehler beim Status-Update:", error);
     return NextResponse.json(
       { error: "Interner Serverfehler" },
       { status: 500 }
