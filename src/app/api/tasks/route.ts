@@ -148,11 +148,10 @@ export async function POST(req: NextRequest) {
   }
 }
 
+// Automatische faire Zuweisung
 async function autoAssignTask(taskId: string, count: number) {
+  // Alle User holen, sortiert nach wenigsten aktiven Aufgaben
   const users = await prisma.user.findMany({
-    where: {
-      role: { not: "ADMIN" },
-    },
     select: {
       id: true,
       _count: {

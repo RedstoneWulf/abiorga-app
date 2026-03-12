@@ -12,7 +12,6 @@ export async function POST(_req: NextRequest) {
       return NextResponse.json({ error: "Nicht eingeloggt" }, { status: 401 });
     }
 
-    // Nur Admins
     const user = await prisma.user.findUnique({
       where: { id: session.user.id },
       select: { role: true },
@@ -27,7 +26,6 @@ export async function POST(_req: NextRequest) {
 
     const now = new Date();
 
-    // Alle wiederkehrenden Aufgaben finden, die fällig sind
     const dueTasks = await prisma.task.findMany({
       where: {
         type: "RECURRING",
@@ -48,13 +46,11 @@ export async function POST(_req: NextRequest) {
     for (const task of dueTasks) {
       const lastAssignedUserId = task.assignments[0]?.userId;
 
+      // Alle User holen, den letzten Zugewiesenen nach hinten sortieren
       const nextUsers = await prisma.user.findMany({
-        where: {
-          role: { not: "ADMIN" },
-          ...(lastAssignedUserId
-            ? { id: { not: lastAssignedUserId } }
-            : {}),
-        },
+        where: lastAssignedUserId
+          ? { id: { not: lastAssignedUserId } }
+          : {},
         select: {
           id: true,
           _count: {

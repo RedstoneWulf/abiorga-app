@@ -119,18 +119,19 @@ export default function TaskDetailPage() {
   async function handleAssign() {
     if (selectedUsers.length === 0) return;
     try {
-      const res = await fetch(`/api/tasks/${taskId}/assign`, {
+      const url = `/api/tasks/${taskId}/assign`;
+      const res = await fetch(url, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ userIds: selectedUsers }),
       });
+      const data = await res.json();
       if (res.ok) {
         setShowAssignModal(false);
         setSelectedUsers([]);
         fetchTask();
       } else {
-        const data = await res.json();
-        alert(data.error);
+        alert(data.error || "Fehler beim Zuweisen");
       }
     } catch {
       alert("Netzwerkfehler");
@@ -263,9 +264,11 @@ export default function TaskDetailPage() {
             </div>
           </div>
 
+          {/* Admin-Aktionen */}
           {isAdminOrCommittee && (
             <div className="flex gap-2">
               <button
+                type="button"
                 onClick={() => setShowAssignModal(true)}
                 className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 text-sm font-medium transition-colors"
               >
@@ -273,6 +276,7 @@ export default function TaskDetailPage() {
               </button>
               {userRole === "ADMIN" && (
                 <button
+                  type="button"
                   onClick={handleDelete}
                   className="px-4 py-2 bg-red-100 text-red-700 rounded-lg hover:bg-red-200 text-sm font-medium transition-colors"
                 >
@@ -336,6 +340,7 @@ export default function TaskDetailPage() {
           <div className="flex gap-2">
             {myAssignment.status === "ASSIGNED" && (
               <button
+                type="button"
                 onClick={() => handleStatusChange("IN_PROGRESS")}
                 className="px-4 py-2 bg-yellow-500 text-white rounded-lg hover:bg-yellow-600 text-sm font-medium transition-colors"
               >
@@ -344,6 +349,7 @@ export default function TaskDetailPage() {
             )}
             {myAssignment.status === "IN_PROGRESS" && (
               <button
+                type="button"
                 onClick={() => handleStatusChange("COMPLETED")}
                 className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 text-sm font-medium transition-colors"
               >
@@ -429,6 +435,7 @@ export default function TaskDetailPage() {
                             {[1, 2, 3, 4, 5].map((star) => (
                               <button
                                 key={star}
+                                type="button"
                                 onClick={() => setRatingScore(star)}
                                 className={`text-2xl transition-colors ${
                                   star <= ratingScore
@@ -451,6 +458,7 @@ export default function TaskDetailPage() {
                           />
                           <div className="flex gap-2">
                             <button
+                              type="button"
                               onClick={handleRate}
                               disabled={ratingScore === 0}
                               className="px-3 py-1.5 bg-blue-600 text-white rounded-lg text-sm hover:bg-blue-700 disabled:opacity-50 transition-colors"
@@ -458,6 +466,7 @@ export default function TaskDetailPage() {
                               Bewerten
                             </button>
                             <button
+                              type="button"
                               onClick={() => {
                                 setRatingAssignmentId(null);
                                 setRatingScore(0);
@@ -471,6 +480,7 @@ export default function TaskDetailPage() {
                         </div>
                       ) : (
                         <button
+                          type="button"
                           onClick={() =>
                             setRatingAssignmentId(assignment.id)
                           }
@@ -548,10 +558,18 @@ export default function TaskDetailPage() {
                     <span className="text-sm">{user.name}</span>
                   </label>
                 ))}
+              {allUsers.filter(
+                (u) => !task.assignments.some((a) => a.user.id === u.id)
+              ).length === 0 && (
+                <p className="text-gray-500 text-sm text-center py-4">
+                  Alle User sind bereits zugewiesen
+                </p>
+              )}
             </div>
 
             <div className="flex gap-2">
               <button
+                type="button"
                 onClick={() => {
                   setShowAssignModal(false);
                   setSelectedUsers([]);
@@ -561,6 +579,7 @@ export default function TaskDetailPage() {
                 Abbrechen
               </button>
               <button
+                type="button"
                 onClick={handleAssign}
                 disabled={selectedUsers.length === 0}
                 className="flex-1 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 text-sm font-medium disabled:opacity-50"

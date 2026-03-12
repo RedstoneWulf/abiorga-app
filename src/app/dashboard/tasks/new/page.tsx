@@ -29,7 +29,7 @@ export default function NewTaskPage() {
     type: "ONE_TIME",
     assignmentMode: "MANUAL",
     isTeamTask: false,
-    maxAssignees: 1,
+    maxAssignees: 2,
     recurrenceInterval: "WEEKLY",
     dueDate: "",
     priority: 3,
@@ -224,29 +224,64 @@ export default function NewTaskPage() {
             <input
               type="checkbox"
               checked={form.isTeamTask}
-              onChange={(e) => updateForm("isTeamTask", e.target.checked)}
+              onChange={(e) => {
+                updateForm("isTeamTask", e.target.checked);
+                if (e.target.checked && form.maxAssignees < 2) {
+                  updateForm("maxAssignees", 2);
+                }
+              }}
               className="sr-only peer"
             />
             <div className="w-11 h-6 bg-gray-300 rounded-full peer peer-checked:bg-blue-500 transition-colors after:content-[''] after:absolute after:top-0.5 after:left-[2px] after:bg-white after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:after:translate-x-full"></div>
           </label>
         </div>
 
-        {/* Anzahl Personen bei Team-Aufgaben */}
+        {/* Anzahl Personen bei Team-Aufgaben - +/- Stepper */}
         {form.isTeamTask && (
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">
+            <label className="block text-sm font-medium text-gray-700 mb-2">
               Anzahl Personen
             </label>
-            <input
-              type="number"
-              min={2}
-              max={20}
-              value={form.maxAssignees}
-              onChange={(e) =>
-                updateForm("maxAssignees", parseInt(e.target.value) || 2)
-              }
-              className="w-full border border-gray-300 rounded-lg px-4 py-2.5 focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none"
-            />
+            <div className="flex items-center gap-4">
+              <button
+                type="button"
+                onClick={() => {
+                  if (form.maxAssignees > 2) {
+                    updateForm("maxAssignees", form.maxAssignees - 1);
+                  }
+                }}
+                className={`w-12 h-12 rounded-xl border-2 text-xl font-bold flex items-center justify-center transition-all ${
+                  form.maxAssignees <= 2
+                    ? "border-gray-200 text-gray-300 cursor-not-allowed"
+                    : "border-gray-300 text-gray-700 hover:border-blue-500 hover:text-blue-600 active:bg-blue-50"
+                }`}
+                disabled={form.maxAssignees <= 2}
+              >
+                −
+              </button>
+              <div className="text-center min-w-[60px]">
+                <div className="text-2xl font-bold text-gray-900">
+                  {form.maxAssignees}
+                </div>
+                <div className="text-xs text-gray-500">Personen</div>
+              </div>
+              <button
+                type="button"
+                onClick={() => {
+                  if (form.maxAssignees < 20) {
+                    updateForm("maxAssignees", form.maxAssignees + 1);
+                  }
+                }}
+                className={`w-12 h-12 rounded-xl border-2 text-xl font-bold flex items-center justify-center transition-all ${
+                  form.maxAssignees >= 20
+                    ? "border-gray-200 text-gray-300 cursor-not-allowed"
+                    : "border-gray-300 text-gray-700 hover:border-blue-500 hover:text-blue-600 active:bg-blue-50"
+                }`}
+                disabled={form.maxAssignees >= 20}
+              >
+                +
+              </button>
+            </div>
           </div>
         )}
 
