@@ -46,6 +46,18 @@ enum RecurrenceInterval {
   MONTHLY
 }
 
+enum EventType {
+  EVENT       // Allgemeines Event (z.B. Abi-Ball Besichtigung)
+  EXAM        // Klausur
+  DEADLINE    // Wichtiger Termin/Frist
+  MEETING     // Treffen
+}
+
+enum PollStatus {
+  ACTIVE      // Abstimmung läuft
+  CLOSED      // Abstimmung beendet
+}
+
 model User {
   id             String   @id @default(cuid())
   email          String   @unique
@@ -66,8 +78,84 @@ model User {
   notifications     Notification[]     @relation("CreatedBy")
   pushSubscriptions PushSubscription[]
   stories           Story[]
+  createdEvents Event[]  @relation("EventCreator")
+  createdPolls  Poll[]   @relation("PollCreator")
+  votes         Vote[]   @relation("PollVotes")
 
   @@map("users")
+}
+
+// ============================================================
+// Events
+// ============================================================
+model Event {
+  id          String    @id @default(cuid())
+  title       String
+  description String?
+  type        EventType
+  startDate   DateTime
+  endDate     DateTime?
+  location    String?
+  allDay      Boolean   @default(false)
+
+  createdById String
+  createdBy   User @relation("EventCreator", fields: [createdById], references: [id])
+
+  teamId String?
+  team   Team?  @relation(fields: [teamId], references: [id])
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([startDate])
+  @@index([type])
+}
+
+// ============================================================
+// Abstimmungen
+// ============================================================
+
+model Poll {
+  id          String     @id @default(cuid())
+  title       String
+  description String?
+  status      PollStatus @default(ACTIVE)
+  allowMultiple Boolean  @default(false)  // Mehrfachauswahl?
+  anonymous     Boolean  @default(false)  // Anonyme Abstimmung?
+  endsAt      DateTime?  // Optionales Enddatum
+
+  createdById String
+  createdBy   User @relation("PollCreator", fields: [createdById], references: [id])
+
+  options PollOption[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model PollOption {
+  id     String @id @default(cuid())
+  text   String
+  pollId String
+  poll   Poll   @relation(fields: [pollId], references: [id], onDelete: Cascade)
+
+  votes Vote[]
+
+  @@index([pollId])
+}
+
+model Vote {
+  id       String @id @default(cuid())
+  optionId String
+  option   PollOption @relation(fields: [optionId], references: [id], onDelete: Cascade)
+
+  voterId String
+  voter   User   @relation("PollVotes", fields: [voterId], references: [id])
+
+  createdAt DateTime @default(now())
+
+  @@unique([optionId, voterId])  // Pro Option nur eine Stimme
+  @@index([voterId])
 }
 
 // ============================================================
@@ -186,6 +274,7 @@ model Team {
   notifications Notification[]
   stories       Story[]
   chatMessages  ChatMessage[]
+  events Event[]
 
   @@map("teams")
 }
