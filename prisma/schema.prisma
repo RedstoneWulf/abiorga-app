@@ -88,6 +88,8 @@ model User {
   createdPolls  Poll[]   @relation("PollCreator")
   votes         Vote[]   @relation("PollVotes")
   chatMessages ChatMessage[] @relation("ChatMessages")
+  storyReactions StoryReaction[] @relation("StoryReactions")
+  storyComments  StoryComment[]  @relation("StoryComments")
 
   @@map("users")
 }
@@ -380,6 +382,7 @@ model Story {
   team   Team?  @relation(fields: [teamId], references: [id])
 
   reactions StoryReaction[]
+  comments StoryComment[]
 
   @@map("stories")
 }
@@ -391,9 +394,23 @@ model StoryReaction {
   emoji   String
 
   story Story @relation(fields: [storyId], references: [id], onDelete: Cascade)
+  user User @relation("StoryReactions", fields: [userId], references: [id])
 
   @@unique([storyId, userId])
   @@map("story_reactions")
+}
+
+model StoryComment {
+  id        String   @id @default(cuid())
+  content   String
+  storyId   String
+  story     Story    @relation(fields: [storyId], references: [id], onDelete: Cascade)
+  userId    String
+  user      User     @relation("StoryComments", fields: [userId], references: [id])
+  createdAt DateTime @default(now())
+
+  @@index([storyId])
+  @@map("story_comments")
 }
 
 // ============================================================

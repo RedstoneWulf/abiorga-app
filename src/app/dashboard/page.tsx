@@ -368,7 +368,7 @@ export default function DashboardPage() {
             <ModuleCard title="Events" icon="📅" href="/dashboard/events" />
             <ModuleCard title="Finanzen" icon="💰" href="/dashboard/finance" />
             <ModuleCard title="Teams" icon="👥" href="/dashboard/teams" />
-            <ModuleCard title="Stories" icon="📸" comingSoon />
+            <ModuleCard title="Stories" icon="📸" href="/dashboard/stories" />
           </div>
         </div>
       </main>
