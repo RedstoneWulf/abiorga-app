@@ -79,6 +79,11 @@ enum NotificationType {
   TRANSACTION   // Transaktion genehmigt/abgelehnt
 }
 
+enum EventVisibility {
+  ALL          // Alle sehen es
+  TEAM_ONLY    // Nur bestimmte Teams
+}
+
 model User {
   id             String   @id @default(cuid())
   email          String   @unique
@@ -107,6 +112,7 @@ model User {
   storyComments  StoryComment[]  @relation("StoryComments")
   notificationReads NotificationRead[]       @relation("NotificationReads")
   notificationPrefs NotificationPreference?  @relation("NotificationPrefs")
+  eventAttendances EventAttendee[] @relation("EventAttendees")
 
   @@map("users")
 }
@@ -119,10 +125,26 @@ model Event {
   title       String
   description String?
   type        EventType
+  category    String?       // z.B. "Treffen", "Fest", "Aufführung" oder eigener Text
   startDate   DateTime
   endDate     DateTime?
   location    String?
   allDay      Boolean   @default(false)
+
+  // Preis
+  isFree      Boolean   @default(true)
+  price       Float?    // null wenn kostenlos
+
+  // Anmeldung
+  registrationRequired Boolean @default(false)
+  maxAttendees         Int?    // null = unbegrenzt
+
+  // Sichtbarkeit
+  visibility  EventVisibility @default(ALL)
+
+  // Kontakt
+  contactName  String?
+  contactInfo  String?   // E-Mail oder Telefon
 
   createdById String
   createdBy   User @relation("EventCreator", fields: [createdById], references: [id])
@@ -130,11 +152,27 @@ model Event {
   teamId String?
   team   Team?  @relation(fields: [teamId], references: [id])
 
+  attendees EventAttendee[]
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
   @@index([startDate])
   @@index([type])
+}
+
+model EventAttendee {
+  id      String @id @default(cuid())
+  eventId String
+  event   Event  @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  userId  String
+  user    User   @relation("EventAttendees", fields: [userId], references: [id])
+  
+  registeredAt DateTime @default(now())
+
+  @@unique([eventId, userId])
+  @@index([eventId])
+  @@map("event_attendees")
 }
 
 // ============================================================
