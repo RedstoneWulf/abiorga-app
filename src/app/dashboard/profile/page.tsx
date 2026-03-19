@@ -5,6 +5,7 @@ import { useSession, signOut } from "next-auth/react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { useTheme } from "@/components/ThemeProvider";
+import NotificationSettings from "@/components/NotificationSettings";
 
 export default function ProfilePage() {
   const { data: session } = useSession();
@@ -276,6 +277,9 @@ export default function ProfilePage() {
             ))}
           </div>
         </div>
+
+        {/* --- Benachrichtigungs-Einstellungen --- */}
+        <NotificationSettings />    
 
         {/* --- Bug melden / Feedback --- */}
         <div className="bg-white dark:bg-gray-800 rounded-xl border dark:border-gray-700">

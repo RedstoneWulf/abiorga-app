@@ -64,6 +64,21 @@ enum TeamType {
   CUSTOM      // Normales Team
 }
 
+enum NotificationPriority {
+  NORMAL
+  HIGH      // Immer zugestellt, kann nicht abgestellt werden
+}
+
+enum NotificationType {
+  GLOBAL        // Globale Nachricht von Admin/Komitee
+  STORY         // Neuer Story-Post
+  CHAT          // Neue Chat-Nachricht
+  EVENT         // Neues Event/Klausur
+  TASK          // Neue Aufgabe zugewiesen
+  POLL          // Neue Abstimmung
+  TRANSACTION   // Transaktion genehmigt/abgelehnt
+}
+
 model User {
   id             String   @id @default(cuid())
   email          String   @unique
@@ -90,6 +105,8 @@ model User {
   chatMessages ChatMessage[] @relation("ChatMessages")
   storyReactions StoryReaction[] @relation("StoryReactions")
   storyComments  StoryComment[]  @relation("StoryComments")
+  notificationReads NotificationRead[]       @relation("NotificationReads")
+  notificationPrefs NotificationPreference?  @relation("NotificationPrefs")
 
   @@map("users")
 }
@@ -348,12 +365,14 @@ enum NotificationScope {
 }
 
 model Notification {
-  id        String            @id @default(cuid())
+  id        String               @id @default(cuid())
   title     String
   message   String
-  scope     NotificationScope @default(GLOBAL)
-  pinned    Boolean           @default(false)
-  createdAt DateTime          @default(now())
+  scope     NotificationScope    @default(GLOBAL)
+  type      NotificationType     @default(GLOBAL)
+  priority  NotificationPriority @default(NORMAL)
+  pinned    Boolean              @default(false)
+  createdAt DateTime             @default(now())
 
   createdById String
   createdBy   User @relation("CreatedBy", fields: [createdById], references: [id])
@@ -361,7 +380,43 @@ model Notification {
   teamId String?
   team   Team?  @relation(fields: [teamId], references: [id])
 
+  // Welche User haben sie gelesen?
+  readBy NotificationRead[]
+
+  @@index([type])
+  @@index([createdAt])
   @@map("notifications")
+}
+
+model NotificationRead {
+  id             String       @id @default(cuid())
+  notificationId String
+  notification   Notification @relation(fields: [notificationId], references: [id], onDelete: Cascade)
+  userId         String
+  user           User         @relation("NotificationReads", fields: [userId], references: [id])
+  readAt         DateTime     @default(now())
+
+  @@unique([notificationId, userId])
+  @@index([userId])
+  @@map("notification_reads")
+}
+
+model NotificationPreference {
+  id     String @id @default(cuid())
+  userId String @unique
+  user   User   @relation("NotificationPrefs", fields: [userId], references: [id])
+
+  // Welche Benachrichtigungen will der User?
+  stories      Boolean @default(true)
+  chat         Boolean @default(true)
+  events       Boolean @default(true)
+  tasks        Boolean @default(true)
+  polls        Boolean @default(true)
+  transactions Boolean @default(true)
+  global       Boolean @default(true)
+  // HIGH priority kann NICHT abgestellt werden
+
+  @@map("notification_preferences")
 }
 
 // ============================================================
