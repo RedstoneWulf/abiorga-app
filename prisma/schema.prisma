@@ -58,6 +58,12 @@ enum PollStatus {
   CLOSED      // Abstimmung beendet
 }
 
+enum TeamType {
+  COMMITTEE   // Komitee - fast wie Admin-Rechte
+  FINANCE     // Finanz-Team - Genehmigungsrechte
+  CUSTOM      // Normales Team
+}
+
 model User {
   id             String   @id @default(cuid())
   email          String   @unique
@@ -81,6 +87,7 @@ model User {
   createdEvents Event[]  @relation("EventCreator")
   createdPolls  Poll[]   @relation("PollCreator")
   votes         Vote[]   @relation("PollVotes")
+  chatMessages ChatMessage[] @relation("ChatMessages")
 
   @@map("users")
 }
@@ -265,6 +272,7 @@ model Team {
   id          String   @id @default(cuid())
   name        String   @unique
   description String?
+  type TeamType @default(CUSTOM)
   color       String   @default("#4472C4")
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
@@ -400,6 +408,7 @@ model ChatMessage {
   createdAt DateTime @default(now())
 
   team Team @relation(fields: [teamId], references: [id], onDelete: Cascade)
+  user User @relation("ChatMessages", fields: [userId], references: [id])
 
   @@map("chat_messages")
 }

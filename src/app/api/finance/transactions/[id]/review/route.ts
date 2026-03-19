@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
+import { hasFinanceAccess } from "@/lib/permissions";
 
 interface RouteParams {
   params: Promise<{ id: string }>;
@@ -15,14 +16,11 @@ export async function POST(req: NextRequest, { params }: RouteParams) {
       return NextResponse.json({ error: "Nicht eingeloggt" }, { status: 401 });
     }
 
-    const user = await prisma.user.findUnique({
-      where: { id: session.user.id },
-      select: { role: true },
-    });
-
-    if (user?.role !== "ADMIN" && user?.role !== "COMMITTEE") {
+    // Prüfe: Admin, Committee-Rolle ODER Mitglied im Finanz-/Komitee-Team
+    const canReview = await hasFinanceAccess(session.user.id);
+    if (!canReview) {
       return NextResponse.json(
-        { error: "Nur Admins und Komitee können Transaktionen genehmigen" },
+        { error: "Keine Berechtigung. Nur Admins, Komitee und das Finanz-Team können Transaktionen genehmigen." },
         { status: 403 }
       );
     }
@@ -46,17 +44,11 @@ export async function POST(req: NextRequest, { params }: RouteParams) {
     });
 
     if (!transaction) {
-      return NextResponse.json(
-        { error: "Transaktion nicht gefunden" },
-        { status: 404 }
-      );
+      return NextResponse.json({ error: "Transaktion nicht gefunden" }, { status: 404 });
     }
 
     if (transaction.status !== "PENDING") {
-      return NextResponse.json(
-        { error: "Transaktion wurde bereits bearbeitet" },
-        { status: 400 }
-      );
+      return NextResponse.json({ error: "Transaktion wurde bereits bearbeitet" }, { status: 400 });
     }
 
     if (action === "REJECT" && (!rejectReason || rejectReason.trim().length === 0)) {
@@ -83,9 +75,6 @@ export async function POST(req: NextRequest, { params }: RouteParams) {
     return NextResponse.json(updated);
   } catch (error) {
     console.error("Fehler bei der Genehmigung:", error);
-    return NextResponse.json(
-      { error: "Interner Serverfehler" },
-      { status: 500 }
-    );
+    return NextResponse.json({ error: "Interner Serverfehler" }, { status: 500 });
   }
 }
