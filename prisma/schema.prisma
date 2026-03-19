@@ -403,3 +403,9 @@ model ChatMessage {
 
   @@map("chat_messages")
 }
+
+model AppSettings {
+  id    String @id @default("app-settings")
+  financeGoal Float @default(5000)
+  updatedAt   DateTime @updatedAt
+}
