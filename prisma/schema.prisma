@@ -127,6 +127,7 @@ model User {
   eventAttendances EventAttendee[] @relation("EventAttendees")
   teamFollows      TeamFollow[]       @relation("TeamFollows")
   teamJoinRequests TeamJoinRequest[]  @relation("TeamJoinRequests")
+  storyViews StoryView[] @relation("StoryViews")
 
   @@map("users")
 }
@@ -528,6 +529,7 @@ model Story {
 
   reactions StoryReaction[]
   comments StoryComment[]
+  views StoryView[]
 
   @@map("stories")
 }
@@ -556,6 +558,19 @@ model StoryComment {
 
   @@index([storyId])
   @@map("story_comments")
+}
+
+model StoryView {
+  id      String @id @default(cuid())
+  storyId String
+  story   Story  @relation(fields: [storyId], references: [id], onDelete: Cascade)
+  userId  String
+  user    User   @relation("StoryViews", fields: [userId], references: [id])
+  viewedAt DateTime @default(now())
+
+  @@unique([storyId, userId])
+  @@index([userId])
+  @@map("story_views")
 }
 
 // ============================================================

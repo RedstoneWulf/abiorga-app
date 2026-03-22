@@ -164,8 +164,15 @@ export default function TeamDetailPage() {
                 className={`text-sm ${team.isFollowing ? "text-pink-500" : "text-gray-400 hover:text-pink-500"}`}>
                 {team.isFollowing ? "❤️" : "🤍"}
               </button>
+              {team.isMember && (
+                <Link href={`/dashboard/stories/new?teamId=${team.id}`}
+                  className="text-[10px] text-blue-600 dark:text-blue-400 font-medium">
+                  📸 Story
+                </Link>
+              )}
               <span className="text-[10px] text-gray-400">{team._count.members}</span>
             </div>
+            
           </div>
 
           {team.type !== "CUSTOM" && (
