@@ -2,12 +2,13 @@ import { NextRequest, NextResponse } from "next/server";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
+import { hasCommitteeAccess } from "@/lib/permissions";
 
 interface RouteParams {
   params: Promise<{ id: string }>;
 }
 
-// GET /api/teams/[id] - Team-Details mit Mitgliedern
+// GET /api/teams/[id]
 export async function GET(_req: NextRequest, { params }: RouteParams) {
   try {
     const session = await getServerSession(authOptions);
@@ -21,12 +22,18 @@ export async function GET(_req: NextRequest, { params }: RouteParams) {
       where: { id },
       include: {
         members: {
-          include: {
-            user: { select: { id: true, name: true, role: true } },
-          },
+          include: { user: { select: { id: true, name: true, role: true } } },
           orderBy: [{ isLeader: "desc" }, { user: { name: "asc" } }],
         },
-        _count: { select: { members: true, chatMessages: true } },
+        followers: {
+          where: { userId: session.user.id },
+          select: { id: true },
+        },
+        joinRequests: {
+          where: { status: "PENDING" },
+          include: { user: { select: { id: true, name: true } } },
+        },
+        _count: { select: { members: true, chatMessages: true, followers: true } },
       },
     });
 
@@ -35,14 +42,22 @@ export async function GET(_req: NextRequest, { params }: RouteParams) {
     }
 
     const isMember = team.members.some((m) => m.userId === session.user.id);
-    const isLeader = team.members.some(
-      (m) => m.userId === session.user.id && m.isLeader
-    );
+    const isLeader = team.members.some((m) => m.userId === session.user.id && m.isLeader);
+    const isCreator = team.createdById === session.user.id;
+    const isAdmin = await hasCommitteeAccess(session.user.id);
+    const canManage = isAdmin || isCreator;
 
     return NextResponse.json({
       ...team,
       isMember,
       isLeader,
+      isCreator,
+      isAdmin,
+      canManage,
+      isFollowing: team.followers.length > 0,
+      followerCount: team._count.followers,
+      // Nur Manager sehen Join-Requests
+      joinRequests: canManage ? team.joinRequests : [],
     });
   } catch (error) {
     console.error("Fehler:", error);
@@ -50,7 +65,7 @@ export async function GET(_req: NextRequest, { params }: RouteParams) {
   }
 }
 
-// DELETE /api/teams/[id] - Team löschen (nur Leader oder Admin)
+// DELETE /api/teams/[id]
 export async function DELETE(_req: NextRequest, { params }: RouteParams) {
   try {
     const session = await getServerSession(authOptions);
@@ -60,24 +75,23 @@ export async function DELETE(_req: NextRequest, { params }: RouteParams) {
 
     const { id } = await params;
 
-    const user = await prisma.user.findUnique({
-      where: { id: session.user.id },
-      select: { role: true },
+    const team = await prisma.team.findUnique({
+      where: { id },
+      select: { createdById: true },
     });
 
-    const membership = await prisma.teamMember.findUnique({
-      where: { userId_teamId: { userId: session.user.id, teamId: id } },
-    });
+    if (!team) {
+      return NextResponse.json({ error: "Team nicht gefunden" }, { status: 404 });
+    }
 
-    if (user?.role !== "ADMIN" && !membership?.isLeader) {
-      return NextResponse.json(
-        { error: "Nur Teamleiter oder Admins können Teams löschen" },
-        { status: 403 }
-      );
+    const isAdmin = await hasCommitteeAccess(session.user.id);
+    const isCreator = team.createdById === session.user.id;
+
+    if (!isAdmin && !isCreator) {
+      return NextResponse.json({ error: "Nur Admins, Komitee oder der Ersteller können Teams löschen" }, { status: 403 });
     }
 
     await prisma.team.delete({ where: { id } });
-
     return NextResponse.json({ message: "Team gelöscht" });
   } catch (error) {
     console.error("Fehler:", error);

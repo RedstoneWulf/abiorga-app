@@ -90,6 +90,12 @@ enum ResultVisibility {
   AFTER_CLOSE   // Ergebnisse erst nach Beendigung sichtbar
 }
 
+enum JoinMode {
+  OPEN        // Jeder kann beitreten
+  REQUEST     // Anfrage muss bestätigt werden
+  INVITE_ONLY // Nur per Einladung
+}
+
 model User {
   id             String   @id @default(cuid())
   email          String   @unique
@@ -119,6 +125,8 @@ model User {
   notificationReads NotificationRead[]       @relation("NotificationReads")
   notificationPrefs NotificationPreference?  @relation("NotificationPrefs")
   eventAttendances EventAttendee[] @relation("EventAttendees")
+  teamFollows      TeamFollow[]       @relation("TeamFollows")
+  teamJoinRequests TeamJoinRequest[]  @relation("TeamJoinRequests")
 
   @@map("users")
 }
@@ -341,6 +349,10 @@ model Team {
   color       String   @default("#4472C4")
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
+  joinMode    JoinMode @default(OPEN)
+  icon        String?   // Emoji oder Buchstabe als Avatar
+  createdById String?
+  
 
   members       TeamMember[]
   tasks         Task[]
@@ -348,6 +360,8 @@ model Team {
   stories       Story[]
   chatMessages  ChatMessage[]
   events Event[]
+  followers   TeamFollow[]
+  joinRequests TeamJoinRequest[]
 
   @@map("teams")
 }
@@ -363,6 +377,33 @@ model TeamMember {
 
   @@unique([userId, teamId])
   @@map("team_members")
+}
+
+model TeamFollow {
+  id     String @id @default(cuid())
+  userId String
+  user   User   @relation("TeamFollows", fields: [userId], references: [id])
+  teamId String
+  team   Team   @relation(fields: [teamId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now())
+
+  @@unique([userId, teamId])
+  @@map("team_follows")
+}
+
+model TeamJoinRequest {
+  id     String @id @default(cuid())
+  userId String
+  user   User   @relation("TeamJoinRequests", fields: [userId], references: [id])
+  teamId String
+  team   Team   @relation(fields: [teamId], references: [id], onDelete: Cascade)
+  status String @default("PENDING") // PENDING, APPROVED, REJECTED
+
+  createdAt DateTime @default(now())
+
+  @@unique([userId, teamId])
+  @@map("team_join_requests")
 }
 
 // ============================================================

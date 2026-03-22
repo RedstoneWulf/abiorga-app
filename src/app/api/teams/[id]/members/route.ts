@@ -2,12 +2,13 @@ import { NextRequest, NextResponse } from "next/server";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
+import { hasCommitteeAccess } from "@/lib/permissions";
 
 interface RouteParams {
   params: Promise<{ id: string }>;
 }
 
-// POST /api/teams/[id]/members - Team beitreten oder Mitglied hinzufügen
+// POST /api/teams/[id]/members - Beitreten oder hinzufügen
 export async function POST(req: NextRequest, { params }: RouteParams) {
   try {
     const session = await getServerSession(authOptions);
@@ -19,60 +20,69 @@ export async function POST(req: NextRequest, { params }: RouteParams) {
     const body = await req.json();
     const { userId } = body as { userId?: string };
 
-    // Wenn userId angegeben: jemand anderen hinzufügen (nur Leader/Admin)
     const targetUserId = userId || session.user.id;
+    const isSelfJoin = !userId || userId === session.user.id;
+    const isAdmin = await hasCommitteeAccess(session.user.id);
 
-    if (userId && userId !== session.user.id) {
+    // Jemand anderen hinzufügen: nur Leader/Admin/Creator
+    if (!isSelfJoin) {
+      const team = await prisma.team.findUnique({ where: { id: teamId }, select: { createdById: true } });
       const membership = await prisma.teamMember.findUnique({
         where: { userId_teamId: { userId: session.user.id, teamId } },
       });
-      const user = await prisma.user.findUnique({
-        where: { id: session.user.id },
-        select: { role: true },
-      });
 
-      if (!membership?.isLeader && user?.role !== "ADMIN") {
-        return NextResponse.json(
-          { error: "Nur Teamleiter können Mitglieder hinzufügen" },
-          { status: 403 }
-        );
+      if (!membership?.isLeader && !isAdmin && team?.createdById !== session.user.id) {
+        return NextResponse.json({ error: "Keine Berechtigung" }, { status: 403 });
       }
     }
 
-    // Prüfen ob bereits Mitglied
+    // Bereits Mitglied?
     const existing = await prisma.teamMember.findUnique({
       where: { userId_teamId: { userId: targetUserId, teamId } },
     });
-
     if (existing) {
       return NextResponse.json({ error: "Bereits Mitglied" }, { status: 400 });
     }
 
-    // Spezielle Teams: nur mit Einladung (Leader/Admin)
     const team = await prisma.team.findUnique({
       where: { id: teamId },
-      select: { type: true },
+      select: { type: true, joinMode: true },
     });
 
-    if (
-      (team?.type === "COMMITTEE" || team?.type === "FINANCE") &&
-      !userId // Selbst beitreten
-    ) {
-      const user = await prisma.user.findUnique({
-        where: { id: session.user.id },
-        select: { role: true },
-      });
-      if (user?.role !== "ADMIN") {
-        return NextResponse.json(
-          { error: "Spezielle Teams erfordern eine Einladung vom Teamleiter" },
-          { status: 403 }
-        );
+    if (!team) {
+      return NextResponse.json({ error: "Team nicht gefunden" }, { status: 404 });
+    }
+
+    // Admin/Komitee kann IMMER beitreten
+    if (isSelfJoin && !isAdmin) {
+      if (team.joinMode === "INVITE_ONLY") {
+        return NextResponse.json({ error: "Dieses Team ist nur per Einladung erreichbar" }, { status: 403 });
+      }
+
+      if (team.joinMode === "REQUEST") {
+        // Prüfen ob bereits Anfrage existiert
+        const existingRequest = await prisma.teamJoinRequest.findUnique({
+          where: { userId_teamId: { userId: session.user.id, teamId } },
+        });
+        if (existingRequest) {
+          return NextResponse.json({ error: "Deine Anfrage wurde bereits gesendet" }, { status: 400 });
+        }
+
+        await prisma.teamJoinRequest.create({
+          data: { userId: session.user.id, teamId },
+        });
+
+        return NextResponse.json({ message: "Beitrittsanfrage gesendet!", isRequest: true });
       }
     }
 
-    await prisma.teamMember.create({
-      data: { userId: targetUserId, teamId },
-    });
+    // OPEN oder Admin → direkt beitreten
+    await prisma.teamMember.create({ data: { userId: targetUserId, teamId } });
+
+    // Falls eine Anfrage existierte, löschen
+    await prisma.teamJoinRequest.deleteMany({
+      where: { userId: targetUserId, teamId },
+    }).catch(() => {});
 
     return NextResponse.json({ message: "Beigetreten!" });
   } catch (error) {
@@ -81,7 +91,7 @@ export async function POST(req: NextRequest, { params }: RouteParams) {
   }
 }
 
-// DELETE /api/teams/[id]/members - Team verlassen oder Mitglied entfernen
+// DELETE /api/teams/[id]/members - Verlassen oder entfernen
 export async function DELETE(req: NextRequest, { params }: RouteParams) {
   try {
     const session = await getServerSession(authOptions);
@@ -93,21 +103,15 @@ export async function DELETE(req: NextRequest, { params }: RouteParams) {
     const { searchParams } = new URL(req.url);
     const removeUserId = searchParams.get("userId") || session.user.id;
 
-    // Jemand anderen entfernen: nur Leader/Admin
     if (removeUserId !== session.user.id) {
+      const isAdmin = await hasCommitteeAccess(session.user.id);
+      const team = await prisma.team.findUnique({ where: { id: teamId }, select: { createdById: true } });
       const membership = await prisma.teamMember.findUnique({
         where: { userId_teamId: { userId: session.user.id, teamId } },
       });
-      const user = await prisma.user.findUnique({
-        where: { id: session.user.id },
-        select: { role: true },
-      });
 
-      if (!membership?.isLeader && user?.role !== "ADMIN") {
-        return NextResponse.json(
-          { error: "Nur Teamleiter können Mitglieder entfernen" },
-          { status: 403 }
-        );
+      if (!membership?.isLeader && !isAdmin && team?.createdById !== session.user.id) {
+        return NextResponse.json({ error: "Keine Berechtigung" }, { status: 403 });
       }
     }
 
