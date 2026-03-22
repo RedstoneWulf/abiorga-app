@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
+import type { ResultVisibility } from "@prisma/client";
 
 // GET /api/polls - Alle Abstimmungen
 export async function GET(_req: NextRequest) {
@@ -10,6 +11,27 @@ export async function GET(_req: NextRequest) {
     if (!session?.user) {
       return NextResponse.json({ error: "Nicht eingeloggt" }, { status: 401 });
     }
+
+    // Auto-Löschung: Beendete Polls nach 48h löschen
+    const deleteThreshold = new Date(Date.now() - 48 * 60 * 60 * 1000);
+    await prisma.poll.deleteMany({
+      where: {
+        status: "CLOSED",
+        closedAt: { not: null, lt: deleteThreshold },
+      },
+    });
+
+    // Auch abgelaufene Polls schließen
+    await prisma.poll.updateMany({
+      where: {
+        status: "ACTIVE",
+        endsAt: { not: null, lt: new Date() },
+      },
+      data: {
+        status: "CLOSED",
+        closedAt: new Date(),
+      },
+    });
 
     const polls = await prisma.poll.findMany({
       include: {
@@ -23,39 +45,54 @@ export async function GET(_req: NextRequest) {
             },
           },
         },
-        _count: { select: { options: true } },
       },
       orderBy: { createdAt: "desc" },
     });
 
-    // Formatieren: hat der User schon abgestimmt?
     const formatted = polls.map((poll) => {
-      const totalVotes = poll.options.reduce(
-        (sum, opt) => sum + opt._count.votes,
-        0
-      );
+      const totalVotes = poll.options.reduce((sum, opt) => sum + opt._count.votes, 0);
       const hasVoted = poll.options.some((opt) => opt.votes.length > 0);
+      const isClosed = poll.status === "CLOSED";
+
+      // Bestimme ob Ergebnisse angezeigt werden
+      let showResults = false;
+      if (poll.resultVisibility === "BEFORE_VOTE") {
+        showResults = true;
+      } else if (poll.resultVisibility === "AFTER_VOTE") {
+        showResults = hasVoted || isClosed;
+      } else if (poll.resultVisibility === "AFTER_CLOSE") {
+        showResults = isClosed;
+      }
 
       return {
-        ...poll,
+        id: poll.id,
+        title: poll.title,
+        description: poll.description,
+        status: poll.status,
+        allowMultiple: poll.allowMultiple,
+        anonymous: poll.anonymous,
+        resultVisibility: poll.resultVisibility,
+        endsAt: poll.endsAt,
+        closedAt: poll.closedAt,
+        createdBy: poll.createdBy,
+        createdById: poll.createdById,
         totalVotes,
         hasVoted,
+        showResults,
         options: poll.options.map((opt) => ({
           id: opt.id,
           text: opt.text,
-          voteCount: opt._count.votes,
+          voteCount: showResults ? opt._count.votes : 0,
           hasMyVote: opt.votes.length > 0,
         })),
+        createdAt: poll.createdAt,
       };
     });
 
     return NextResponse.json(formatted);
   } catch (error) {
-    console.error("Fehler beim Laden der Abstimmungen:", error);
-    return NextResponse.json(
-      { error: "Interner Serverfehler" },
-      { status: 500 }
-    );
+    console.error("Fehler:", error);
+    return NextResponse.json({ error: "Interner Serverfehler" }, { status: 500 });
   }
 }
 
@@ -68,36 +105,35 @@ export async function POST(req: NextRequest) {
     }
 
     const body = await req.json();
-    const { title, description, options, allowMultiple, anonymous, endsAt } =
-      body as {
-        title: string;
-        description?: string;
-        options: string[];
-        allowMultiple?: boolean;
-        anonymous?: boolean;
-        endsAt?: string;
-      };
+    const { title, description, options, allowMultiple, anonymous, endsAt, resultVisibility } = body as {
+      title: string;
+      description?: string;
+      options: string[];
+      allowMultiple?: boolean;
+      anonymous?: boolean;
+      endsAt?: string;
+      resultVisibility?: string;
+    };
 
     if (!title || !options || options.length < 2) {
-      return NextResponse.json(
-        { error: "Titel und mindestens 2 Optionen sind erforderlich" },
-        { status: 400 }
-      );
+      return NextResponse.json({ error: "Titel und mindestens 2 Optionen sind erforderlich" }, { status: 400 });
     }
 
     if (options.length > 10) {
-      return NextResponse.json(
-        { error: "Maximal 10 Optionen erlaubt" },
-        { status: 400 }
-      );
+      return NextResponse.json({ error: "Maximal 10 Optionen erlaubt" }, { status: 400 });
     }
+
+    const validVisibility: ResultVisibility =
+      resultVisibility === "BEFORE_VOTE" ? "BEFORE_VOTE" :
+      resultVisibility === "AFTER_CLOSE" ? "AFTER_CLOSE" : "AFTER_VOTE";
 
     const poll = await prisma.poll.create({
       data: {
         title,
-        description: description || null,
-        allowMultiple: allowMultiple || false,
-        anonymous: anonymous || false,
+        description: description && description.length > 0 ? description : null,
+        allowMultiple: allowMultiple === true,
+        anonymous: anonymous === true,
+        resultVisibility: validVisibility,
         endsAt: endsAt ? new Date(endsAt) : null,
         createdById: session.user.id,
         options: {
@@ -112,10 +148,7 @@ export async function POST(req: NextRequest) {
 
     return NextResponse.json(poll, { status: 201 });
   } catch (error) {
-    console.error("Fehler beim Erstellen der Abstimmung:", error);
-    return NextResponse.json(
-      { error: "Interner Serverfehler" },
-      { status: 500 }
-    );
+    console.error("Fehler:", error);
+    return NextResponse.json({ error: "Interner Serverfehler" }, { status: 500 });
   }
 }

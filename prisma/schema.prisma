@@ -84,6 +84,12 @@ enum EventVisibility {
   TEAM_ONLY    // Nur bestimmte Teams
 }
 
+enum ResultVisibility {
+  AFTER_VOTE    // Ergebnisse sichtbar nachdem man abgestimmt hat
+  BEFORE_VOTE   // Ergebnisse immer sichtbar (auch vor der Abstimmung)
+  AFTER_CLOSE   // Ergebnisse erst nach Beendigung sichtbar
+}
+
 model User {
   id             String   @id @default(cuid())
   email          String   @unique
@@ -186,6 +192,8 @@ model Poll {
   status      PollStatus @default(ACTIVE)
   allowMultiple Boolean  @default(false)  // Mehrfachauswahl?
   anonymous     Boolean  @default(false)  // Anonyme Abstimmung?
+  resultVisibility ResultVisibility @default(AFTER_VOTE)
+  closedAt         DateTime?
   endsAt      DateTime?  // Optionales Enddatum
 
   createdById String
