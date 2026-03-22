@@ -4,13 +4,22 @@ import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import type { TransactionStatus, TransactionType } from "@prisma/client";
 
-// GET /api/finance/transactions - Transaktionen abrufen
+// GET /api/finance/transactions
 export async function GET(req: NextRequest) {
   try {
     const session = await getServerSession(authOptions);
     if (!session?.user) {
       return NextResponse.json({ error: "Nicht eingeloggt" }, { status: 401 });
     }
+
+    // Abgelaufene Belege bereinigen
+    await prisma.transaction.updateMany({
+      where: {
+        receiptExpiresAt: { not: null, lt: new Date() },
+        receiptUrl: { not: null },
+      },
+      data: { receiptUrl: null },
+    });
 
     const { searchParams } = new URL(req.url);
     const statusFilter = searchParams.get("status") as TransactionStatus | null;
@@ -22,8 +31,7 @@ export async function GET(req: NextRequest) {
       select: { role: true },
     });
 
-    const isAdminOrCommittee =
-      user?.role === "ADMIN" || user?.role === "COMMITTEE";
+    const isAdminOrCommittee = user?.role === "ADMIN" || user?.role === "COMMITTEE";
 
     const where: {
       status?: TransactionStatus;
@@ -32,15 +40,9 @@ export async function GET(req: NextRequest) {
       OR?: Array<{ status: TransactionStatus } | { createdById: string }>;
     } = {};
 
-    if (statusFilter) {
-      where.status = statusFilter;
-    }
+    if (statusFilter) where.status = statusFilter;
+    if (typeFilter) where.type = typeFilter;
 
-    if (typeFilter) {
-      where.type = typeFilter;
-    }
-
-    // Normaler User: nur eigene + genehmigte Transaktionen sehen
     if (!isAdminOrCommittee && !myOnly) {
       where.OR = [
         { status: "APPROVED" as TransactionStatus },
@@ -48,9 +50,7 @@ export async function GET(req: NextRequest) {
       ];
     }
 
-    if (myOnly) {
-      where.createdById = session.user.id;
-    }
+    if (myOnly) where.createdById = session.user.id;
 
     const transactions = await prisma.transaction.findMany({
       where,
@@ -61,9 +61,10 @@ export async function GET(req: NextRequest) {
       orderBy: { createdAt: "desc" },
     });
 
-    // Für normale User: Ersteller-Name bei fremden Transaktionen ausblenden
     const formatted = transactions.map((t) => ({
       ...t,
+      // Beleg-URL nur für Admin/Komitee oder Ersteller sichtbar
+      receiptUrl: (isAdminOrCommittee || t.createdById === session.user.id) ? t.receiptUrl : null,
       createdBy: isAdminOrCommittee || t.createdById === session.user.id
         ? t.createdBy
         : { id: "hidden", name: "Mitglied" },
@@ -71,15 +72,12 @@ export async function GET(req: NextRequest) {
 
     return NextResponse.json(formatted);
   } catch (error) {
-    console.error("Fehler beim Laden der Transaktionen:", error);
-    return NextResponse.json(
-      { error: "Interner Serverfehler" },
-      { status: 500 }
-    );
+    console.error("Fehler:", error);
+    return NextResponse.json({ error: "Interner Serverfehler" }, { status: 500 });
   }
 }
 
-// POST /api/finance/transactions - Neue Transaktion erstellen
+// POST /api/finance/transactions
 export async function POST(req: NextRequest) {
   try {
     const session = await getServerSession(authOptions);
@@ -88,32 +86,30 @@ export async function POST(req: NextRequest) {
     }
 
     const body = await req.json();
-    const { amount, type, reason, category } = body as {
+    const { amount, type, reason, category, transactionDate, receiptUrl } = body as {
       amount: number;
       type: string;
       reason: string;
       category?: string;
+      transactionDate?: string;
+      receiptUrl?: string;
     };
 
     if (!amount || amount <= 0) {
-      return NextResponse.json(
-        { error: "Betrag muss größer als 0 sein" },
-        { status: 400 }
-      );
+      return NextResponse.json({ error: "Betrag muss größer als 0 sein" }, { status: 400 });
     }
 
     if (!type || (type !== "INCOME" && type !== "EXPENSE")) {
-      return NextResponse.json(
-        { error: "Typ muss INCOME oder EXPENSE sein" },
-        { status: 400 }
-      );
+      return NextResponse.json({ error: "Typ muss INCOME oder EXPENSE sein" }, { status: 400 });
     }
 
     if (!reason || reason.trim().length === 0) {
-      return NextResponse.json(
-        { error: "Grund ist erforderlich" },
-        { status: 400 }
-      );
+      return NextResponse.json({ error: "Grund ist erforderlich" }, { status: 400 });
+    }
+
+    // Beleg max ~5MB
+    if (receiptUrl && receiptUrl.length > 7_000_000) {
+      return NextResponse.json({ error: "Beleg-Bild ist zu groß. Maximal 5MB." }, { status: 400 });
     }
 
     const transaction = await prisma.transaction.create({
@@ -123,6 +119,8 @@ export async function POST(req: NextRequest) {
         reason: reason.trim(),
         category: category && category.trim().length > 0 ? category.trim() : null,
         status: "PENDING",
+        transactionDate: transactionDate ? new Date(transactionDate) : null,
+        receiptUrl: receiptUrl || null,
         createdById: session.user.id,
       },
       include: {
@@ -132,10 +130,7 @@ export async function POST(req: NextRequest) {
 
     return NextResponse.json(transaction, { status: 201 });
   } catch (error) {
-    console.error("Fehler beim Erstellen der Transaktion:", error);
-    return NextResponse.json(
-      { error: "Interner Serverfehler" },
-      { status: 500 }
-    );
+    console.error("Fehler:", error);
+    return NextResponse.json({ error: "Interner Serverfehler" }, { status: 500 });
   }
 }

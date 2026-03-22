@@ -8,7 +8,7 @@ interface RouteParams {
   params: Promise<{ id: string }>;
 }
 
-// POST /api/finance/transactions/[id]/review - Genehmigen oder Ablehnen
+// POST /api/finance/transactions/[id]/review
 export async function POST(req: NextRequest, { params }: RouteParams) {
   try {
     const session = await getServerSession(authOptions);
@@ -16,11 +16,10 @@ export async function POST(req: NextRequest, { params }: RouteParams) {
       return NextResponse.json({ error: "Nicht eingeloggt" }, { status: 401 });
     }
 
-    // Prüfe: Admin, Committee-Rolle ODER Mitglied im Finanz-/Komitee-Team
     const canReview = await hasFinanceAccess(session.user.id);
     if (!canReview) {
       return NextResponse.json(
-        { error: "Keine Berechtigung. Nur Admins, Komitee und das Finanz-Team können Transaktionen genehmigen." },
+        { error: "Keine Berechtigung. Nur Admins, Komitee und das Finanz-Team." },
         { status: 403 }
       );
     }
@@ -33,15 +32,10 @@ export async function POST(req: NextRequest, { params }: RouteParams) {
     };
 
     if (action !== "APPROVE" && action !== "REJECT") {
-      return NextResponse.json(
-        { error: "Aktion muss APPROVE oder REJECT sein" },
-        { status: 400 }
-      );
+      return NextResponse.json({ error: "Aktion muss APPROVE oder REJECT sein" }, { status: 400 });
     }
 
-    const transaction = await prisma.transaction.findUnique({
-      where: { id },
-    });
+    const transaction = await prisma.transaction.findUnique({ where: { id } });
 
     if (!transaction) {
       return NextResponse.json({ error: "Transaktion nicht gefunden" }, { status: 404 });
@@ -52,11 +46,13 @@ export async function POST(req: NextRequest, { params }: RouteParams) {
     }
 
     if (action === "REJECT" && (!rejectReason || rejectReason.trim().length === 0)) {
-      return NextResponse.json(
-        { error: "Bei Ablehnung muss ein Grund angegeben werden" },
-        { status: 400 }
-      );
+      return NextResponse.json({ error: "Ablehnungsgrund erforderlich" }, { status: 400 });
     }
+
+    // Beleg-Ablauf: 48h nach Review
+    const receiptExpiresAt = transaction.receiptUrl
+      ? new Date(Date.now() + 48 * 60 * 60 * 1000)
+      : null;
 
     const updated = await prisma.transaction.update({
       where: { id },
@@ -65,6 +61,7 @@ export async function POST(req: NextRequest, { params }: RouteParams) {
         rejectReason: action === "REJECT" ? rejectReason?.trim() : null,
         reviewedById: session.user.id,
         reviewedAt: new Date(),
+        receiptExpiresAt,
       },
       include: {
         createdBy: { select: { id: true, name: true } },
@@ -74,7 +71,7 @@ export async function POST(req: NextRequest, { params }: RouteParams) {
 
     return NextResponse.json(updated);
   } catch (error) {
-    console.error("Fehler bei der Genehmigung:", error);
+    console.error("Fehler:", error);
     return NextResponse.json({ error: "Interner Serverfehler" }, { status: 500 });
   }
 }
