@@ -1,7 +1,7 @@
 "use client";
 
 import { signIn } from "next-auth/react";
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 
@@ -11,6 +11,21 @@ export default function LoginPage() {
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
+  const [maintenanceMode, setMaintenanceMode] = useState(false);
+
+  useEffect(() => {
+    fetch("/api/admin/maintenance")
+      .then((res) => res.json())
+      .then((data) => {
+        if (data.maintenanceMode) {
+          const bypassed = sessionStorage.getItem("maintenance-bypass");
+          if (!bypassed) {
+            router.push("/maintenance");
+          }
+        }
+      })
+      .catch(() => {});
+  }, []);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -31,6 +46,8 @@ export default function LoginPage() {
       router.push("/dashboard");
     }
   };
+
+  
 
   return (
     <div className="min-h-screen flex items-center justify-center bg-gray-50 px-4">
