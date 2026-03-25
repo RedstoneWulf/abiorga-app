@@ -59,6 +59,10 @@ interface NotifData {
 
 // --- Helpers ---
 
+function toLocalDateStr(date: Date) {
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
+}
+
 function formatDate(dateStr: string | null) {
   if (!dateStr) return "";
   const date = new Date(dateStr);
@@ -120,6 +124,7 @@ export default function DashboardPage() {
   const [unreadCount, setUnreadCount] = useState(0);
   const [pinnedNotif, setPinnedNotif] = useState<NotifData | null>(null);
   const [showPinned, setShowPinned] = useState(true);
+  const [selectedCalDay, setSelectedCalDay] = useState<Date | null>(null);
 
   // Popups
   const [showNotifPopup, setShowNotifPopup] = useState(false);
@@ -242,7 +247,7 @@ export default function DashboardPage() {
   });
 
   function getEventsForDay(date: Date) {
-    const dateStr = date.toISOString().split("T")[0];
+    const dateStr = toLocalDateStr(date);
     return weekEvents.filter((e) => e.startDate.startsWith(dateStr));
   }
 
@@ -275,11 +280,14 @@ export default function DashboardPage() {
                         return (
                           <div key={i} className="text-center py-1.5">
                             <p className="text-[9px] text-gray-400 mb-0.5">{WEEKDAYS_SHORT[i]}</p>
-                            <div className={`w-8 h-8 mx-auto rounded-lg flex items-center justify-center text-xs font-medium ${
-                              isToday ? "bg-blue-600 text-white" : "text-gray-700 dark:text-gray-300"
-                            }`}>
-                              {day.getDate()}
-                            </div>
+                            <button type="button" onClick={(e) => { e.stopPropagation(); setSelectedCalDay(selectedCalDay?.toDateString() === day.toDateString() ? null : day); }}
+                              className={`w-8 h-8 mx-auto rounded-lg flex items-center justify-center text-xs font-medium transition-colors ${
+                                isToday ? "bg-blue-600 text-white"
+                                : selectedCalDay?.toDateString() === day.toDateString() ? "bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300"
+                                : "text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700"
+                              }`}>
+                                {day.getDate()}
+                            </button>
                             <div className="flex justify-center gap-0.5 mt-0.5 h-1.5">
                               {dayEvents.slice(0, 3).map((ev) => (
                                 <span key={ev.id} className={`w-1 h-1 rounded-full ${EVENT_DOT_COLORS[ev.type] || "bg-gray-400"}`}></span>
@@ -304,6 +312,28 @@ export default function DashboardPage() {
                         ))}
                       </div>
                     )}
+                    {/* Ausgewählter Tag */}
+                    {selectedCalDay && (
+                      <div className="px-2 pb-2">
+                        <div className="bg-gray-50 dark:bg-gray-700 rounded-lg p-2">
+                          <p className="text-[10px] font-medium text-gray-500 dark:text-gray-400 mb-1.5">
+                            {selectedCalDay.toLocaleDateString("de-DE", { weekday: "long", day: "numeric", month: "short" })}
+                          </p>
+                          {getEventsForDay(selectedCalDay).length === 0 ? (
+                            <p className="text-[10px] text-gray-400">Keine Einträge</p>
+                          ) : (
+                            <div className="space-y-1">
+                              {getEventsForDay(selectedCalDay).map((ev) => (
+                                <div key={ev.id} className="flex items-center gap-1.5">
+                                  <span className={`w-1.5 h-1.5 rounded-full flex-shrink-0 ${EVENT_DOT_COLORS[ev.type] || "bg-gray-400"}`}></span>
+                                  <p className="text-[11px] text-gray-900 dark:text-white truncate">{ev.title}</p>
+                                </div>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    )}
                   </div>
                   <div className="p-2 border-t dark:border-gray-700">
                     <Link href="/dashboard/calendar" onClick={() => setShowCalPopup(false)}
@@ -317,7 +347,7 @@ export default function DashboardPage() {
 
             {/* Notification Popup */}
             <div className="relative">
-              <button type="button" onClick={() => { setShowNotifPopup(!showNotifPopup); setShowCalPopup(false); }}
+              <button type="button" onClick={() => { setShowNotifPopup(!showNotifPopup); setShowCalPopup(false); setSelectedCalDay(null); }}
                 className="relative p-2 text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-colors">
                 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-5 h-5">
                   <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9" /><path d="M13.73 21a2 2 0 0 1-3.46 0" />
@@ -413,7 +443,7 @@ export default function DashboardPage() {
 
       {/* Popup Overlay */}
       {(showNotifPopup || showCalPopup) && (
-        <div className="fixed inset-0 z-30" onClick={() => { setShowNotifPopup(false); setShowCalPopup(false); }}></div>
+        <div className="fixed inset-0 z-30" onClick={() => { setShowNotifPopup(false); setShowCalPopup(false); setSelectedCalDay(null);}}></div>
       )}
 
       <main className="max-w-5xl mx-auto px-4 py-5 space-y-5">
