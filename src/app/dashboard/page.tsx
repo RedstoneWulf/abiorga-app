@@ -189,6 +189,14 @@ export default function DashboardPage() {
                          notifs.find((n) => n.pinned && !n.isRead);
           if (pinned) setPinnedNotif(pinned);
         }
+
+        const maintRes = await fetch("/api/admin/maintenance");
+        if (maintRes.ok) {
+          const maintData = await maintRes.json();
+          if (maintData.maintenanceMode && session?.user?.role !== "ADMIN" && session?.user?.role !== "COMMITTEE") {
+            signOut({ callbackUrl: "/maintenance" });
+          }
+        }
       } catch (error) {
         console.error("Fehler:", error);
       }
@@ -258,7 +266,7 @@ export default function DashboardPage() {
         <div className="max-w-5xl mx-auto px-4 py-3 flex items-center justify-between">
           <Link href="/dashboard" className="text-xl font-bold text-blue-700 dark:text-blue-400">AbiOrga</Link>
           <div className="flex items-center gap-1.5">
-            {session?.user?.role === "ADMIN" && (
+            {(session?.user?.role === "ADMIN" || session?.user?.role === "COMMITTEE") && (
               <Link href="/dashboard/admin"
                 className="p-2 text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-colors"
                 title="Admin Panel">

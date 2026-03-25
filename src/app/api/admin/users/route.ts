@@ -16,7 +16,7 @@ export async function GET(_req: NextRequest) {
       select: { role: true },
     });
 
-    if (currentUser?.role !== "ADMIN") {
+    if (currentUser?.role !== "ADMIN" && currentUser?.role !== "COMMITTEE") {
       return NextResponse.json({ error: "Nur Admins" }, { status: 403 });
     }
 
@@ -67,7 +67,7 @@ export async function POST(req: NextRequest) {
       select: { role: true },
     });
 
-    if (currentUser?.role !== "ADMIN") {
+    if (currentUser?.role !== "ADMIN" && currentUser?.role !== "COMMITTEE") {
       return NextResponse.json({ error: "Nur Admins" }, { status: 403 });
     }
 

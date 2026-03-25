@@ -79,11 +79,11 @@ export default function AdminPage() {
 
   const userRole = session?.user?.role;
 
-  useEffect(() => {
-    if (userRole && userRole !== "ADMIN") {
-      router.push("/dashboard");
-    }
-  }, [userRole, router]);
+    useEffect(() => {
+        if (userRole && userRole !== "ADMIN" && userRole !== "COMMITTEE") {
+            router.push("/dashboard");
+        }
+    }, [userRole, router]);
 
   const fetchData = useCallback(async () => {
     try {
@@ -232,7 +232,7 @@ export default function AdminPage() {
     u.email.toLowerCase().includes(searchQuery.toLowerCase())
   );
 
-  if (userRole !== "ADMIN") return null;
+  if (userRole !== "ADMIN" && userRole !== "COMMITTEE") return null;
 
   return (
     <div className="min-h-screen bg-gray-50 dark:bg-gray-900">
