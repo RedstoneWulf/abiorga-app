@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback, useRef } from "react";
+import { useState, useEffect, useCallback, useRef, Suspense } from "react";
 import { useSession } from "next-auth/react";
 import { useRouter, useSearchParams } from "next/navigation";
 
@@ -12,7 +12,7 @@ interface Team {
   isMember: boolean;
 }
 
-export default function NewStoryPage() {
+function NewStoryContent() {
   const { data: session } = useSession();
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -188,5 +188,17 @@ export default function NewStoryPage() {
         </form>
       </main>
     </div>
+  );
+}
+
+export default function NewStoryPage() {
+  return (
+    <Suspense fallback={
+      <div className="min-h-screen bg-gray-50 dark:bg-gray-900 flex items-center justify-center">
+        <p className="text-gray-400 text-sm">Laden...</p>
+      </div>
+    }>
+      <NewStoryContent />
+    </Suspense>
   );
 }
